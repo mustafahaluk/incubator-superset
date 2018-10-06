@@ -34,7 +34,6 @@ from .base_tests import SupersetTestCase
 
 
 class CoreTests(SupersetTestCase):
-
     requires_examples = True
 
     def __init__(self, *args, **kwargs):
@@ -44,8 +43,8 @@ class CoreTests(SupersetTestCase):
     def setUpClass(cls):
         cls.table_ids = {tbl.table_name: tbl.id for tbl in (
             db.session
-            .query(SqlaTable)
-            .all()
+                .query(SqlaTable)
+                .all()
         )}
 
     def setUp(self):
@@ -100,7 +99,7 @@ class CoreTests(SupersetTestCase):
 
         json_endpoint = (
             '/superset/explore_json/{}/{}/'
-            .format(slc.datasource_type, slc.datasource_id)
+                .format(slc.datasource_type, slc.datasource_id)
         )
         resp = self.get_resp(json_endpoint, {'form_data': json.dumps(slc.viz.form_data)})
         assert '"Jennifer"' in resp
@@ -117,7 +116,7 @@ class CoreTests(SupersetTestCase):
 
         csv_endpoint = (
             '/superset/explore_json/{}/{}/?csv=true'
-            .format(slc.datasource_type, slc.datasource_id)
+                .format(slc.datasource_type, slc.datasource_id)
         )
         resp = self.get_resp(csv_endpoint, {'form_data': json.dumps(slc.viz.form_data)})
         assert 'Jennifer,' in resp
@@ -237,8 +236,8 @@ class CoreTests(SupersetTestCase):
         self.login(username='admin')
         slc = self.get_slice('Girls', db.session)
         slc_data_attributes = slc.data.keys()
-        assert('changed_on' in slc_data_attributes)
-        assert('modified' in slc_data_attributes)
+        assert ('changed_on' in slc_data_attributes)
+        assert ('modified' in slc_data_attributes)
 
     def test_slices(self):
         # Testing by hitting the two supported end points for all slices
@@ -509,8 +508,8 @@ class CoreTests(SupersetTestCase):
     def test_fetch_datasource_metadata(self):
         self.login(username='admin')
         url = (
-            '/superset/fetch_datasource_metadata?' +
-            'datasourceKey=1__table'
+                '/superset/fetch_datasource_metadata?' +
+                'datasourceKey=1__table'
         )
         resp = self.get_json_resp(url)
         keys = [
@@ -532,9 +531,9 @@ class CoreTests(SupersetTestCase):
 
         dash = (
             db.session
-            .query(models.Dashboard)
-            .filter_by(slug='births')
-            .first()
+                .query(models.Dashboard)
+                .filter_by(slug='births')
+                .first()
         )
         url = '/superset/favstar/Dashboard/{}/select/'.format(dash.id)
         resp = self.get_json_resp(url)
@@ -605,8 +604,8 @@ class CoreTests(SupersetTestCase):
         test_file.close()
         main_db_uri = (
             db.session.query(models.Database)
-            .filter_by(database_name='main')
-            .all()
+                .filter_by(database_name='main')
+                .all()
         )
 
         test_file = open(filename, 'rb')
@@ -633,6 +632,50 @@ class CoreTests(SupersetTestCase):
             assert 'CSV file \"testCSV.csv\" uploaded to table' in form_post
         finally:
             os.remove(filename)
+
+    # TODO make the tests
+    # def test_import_excel(self):
+    #     self.login(username='admin')
+    #     filename = 'testExcelL.xlsx'
+    #     table_name = ''.join(
+    #         random.choice(string.ascii_uppercase) for _ in range(5))
+    #
+    #     test_file = open(filename, 'w+')
+    #     test_file.write('a,b\n')
+    #     test_file.write('john,1\n')
+    #     test_file.write('paul,2\n')
+    #     test_file.close()
+    #     main_db_uri = (
+    #         db.session.query(models.Database)
+    #         .filter_by(database_name='main')
+    #         .all()
+    #     )
+    #
+    #     test_file = open(filename, 'rb')
+    #     form_data = {
+    #         'csv_file': test_file,
+    #         'sep': ',',
+    #         'name': table_name,
+    #         'con': main_db_uri[0].id,
+    #         'if_exists': 'append',
+    #         'index_label': 'test_label',
+    #         'mangle_dupe_cols': False,
+    #     }
+    #     url = '/databaseview/list/'
+    #     add_datasource_page = self.get_resp(url)
+    #     assert 'Upload a CSV' in add_datasource_page
+    #
+    #     url = '/csvtodatabaseview/form'
+    #     form_get = self.get_resp(url)
+    #     assert 'CSV to Database configuration' in form_get
+    #
+    #     try:
+    #         # ensure uploaded successfully
+    #         form_post = self.get_resp(url, data=form_data)
+    #         assert 'CSV file \"testCSV.csv\" uploaded to table' in form_post
+    #     finally:
+    #         os.remove(filename)
+    #
 
     def test_dataframe_timezone(self):
         tz = psycopg2.tz.FixedOffsetTimezone(offset=60, name=None)

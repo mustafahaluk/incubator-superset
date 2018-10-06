@@ -54,6 +54,15 @@ After creating the table from CSV, it can then be loaded like any
 other on the ``Sources -> Tables`` page.
 
 
+Can I upload and visualize excel data?
+------------------------------------
+
+Yes, using the ``Upload a Excel`` button under the ``Sources`` menu item.
+This brings up a form that allows you specify required information.
+After creating the table from Excel, it can then be loaded like any
+other on the ``Sources -> Tables`` page.
+
+
 Why are my queries timing out?
 ------------------------------
 

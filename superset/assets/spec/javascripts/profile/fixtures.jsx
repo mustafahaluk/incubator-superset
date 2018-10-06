@@ -36,6 +36,10 @@ export const user = {
         'can_csv',
         'Superset',
       ],
+      [
+        'can_excel',
+        'Superset',
+      ],
     ],
   },
   firstName: 'alpha',

@@ -202,7 +202,7 @@ CORS_OPTIONS = {}
 
 # Allowed format types for upload on Database view
 # TODO: Add processing of other spreadsheet formats (xls, xlsx etc)
-ALLOWED_EXTENSIONS = set(['csv'])
+ALLOWED_EXTENSIONS = set(['csv', 'xls', 'xlsx'])
 
 # CSV Options: key/value pairs that will be passed as argument to DataFrame.to_csv method
 # note: index option should not be overridden
@@ -473,6 +473,7 @@ try:
     else:
         from superset_config import *  # noqa
         import superset_config
+
         print('Loaded your LOCAL configuration at [{}]'.format(
             superset_config.__file__))
 except ImportError:

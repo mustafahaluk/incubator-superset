@@ -49,6 +49,7 @@ ADMIN_ONLY_VIEW_MENUS = {
 
 ALPHA_ONLY_VIEW_MENUS = {
     'Upload a CSV',
+    'Upload a Excel',
 }
 
 ADMIN_ONLY_PERMISSIONS = {
@@ -378,7 +379,7 @@ class SupersetSecurityManager(SecurityManager):
             } or
             pvm.permission.name in {
                 'can_sql_json', 'can_csv', 'can_search_queries', 'can_sqllab_viz',
-                'can_sqllab',
+                'can_sqllab', 'can_excel',
             } or
             (pvm.view_menu.name == 'UserDBModelView' and
              pvm.permission.name == 'can_list'))

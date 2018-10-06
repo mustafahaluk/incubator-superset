@@ -843,6 +843,7 @@ def get_or_create_main_db():
     dbobj.expose_in_sqllab = True
     dbobj.allow_run_sync = True
     dbobj.allow_csv_upload = True
+    dbobj.allow_excel_upload = True
     db.session.add(dbobj)
     db.session.commit()
     return dbobj

@@ -58,6 +58,7 @@ class RolePermissionTests(SupersetTestCase):
         self.assertIn(('can_created_dashboards', 'Superset'), perm_set)
         self.assertIn(('can_created_slices', 'Superset'), perm_set)
         self.assertIn(('can_csv', 'Superset'), perm_set)
+        self.assertIn(('can_excel', 'Superset'), perm_set)
         self.assertIn(('can_dashboard', 'Superset'), perm_set)
         self.assertIn(('can_explore', 'Superset'), perm_set)
         self.assertIn(('can_explore_json', 'Superset'), perm_set)
@@ -163,6 +164,7 @@ class RolePermissionTests(SupersetTestCase):
         sql_lab_set = get_perm_tuples('sql_lab')
         self.assertIn(('can_sql_json', 'Superset'), sql_lab_set)
         self.assertIn(('can_csv', 'Superset'), sql_lab_set)
+        self.assertIn(('can_excel', 'Superset'), sql_lab_set)
         self.assertIn(('can_search_queries', 'Superset'), sql_lab_set)
 
         self.assert_cannot_gamma(sql_lab_set)
@@ -215,6 +217,7 @@ class RolePermissionTests(SupersetTestCase):
         self.assertIn(('can_created_dashboards', 'Superset'), gamma_perm_set)
         self.assertIn(('can_created_slices', 'Superset'), gamma_perm_set)
         self.assertIn(('can_csv', 'Superset'), gamma_perm_set)
+        self.assertIn(('can_excel', 'Superset'), gamma_perm_set)
         self.assertIn(('can_dashboard', 'Superset'), gamma_perm_set)
         self.assertIn(('can_explore', 'Superset'), gamma_perm_set)
         self.assertIn(('can_explore_json', 'Superset'), gamma_perm_set)

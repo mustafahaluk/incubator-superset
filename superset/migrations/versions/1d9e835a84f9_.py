@@ -27,7 +27,16 @@ def upgrade():
             sa.Boolean(),
             nullable=False,
             server_default=expression.true()))
+    op.add_column(
+        'dbs',
+        sa.Column(
+            'allow_excel_upload',
+            sa.Boolean(),
+            nullable=False,
+            server_default=expression.true()))
 
 
 def downgrade():
     op.drop_column('dbs', 'allow_csv_upload')
+    op.drop_column('dbs', 'allow_excel_upload')
+

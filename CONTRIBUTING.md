@@ -197,6 +197,15 @@ pip install -r docs/requirements.txt
 python setup.py build_sphinx
 ```
 
+### Install mysql server
+
+Need to install some dependencies
+```bash
+apt-get install python-dev python3-dev
+apt-get install libmysqlclient-dev
+pip install pymysql
+```
+
 ### Flask server
 
 Make sure your machine meets the [OS dependencies](https://superset.incubator.apache.org/installation.html#os-dependencies) before following these steps.

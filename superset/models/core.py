@@ -639,6 +639,7 @@ class Database(Model, AuditMixinNullable, ImportMixin):
     allow_run_sync = Column(Boolean, default=True)
     allow_run_async = Column(Boolean, default=False)
     allow_csv_upload = Column(Boolean, default=False)
+    allow_excel_upload = Column(Boolean, default=False)
     allow_ctas = Column(Boolean, default=False)
     allow_dml = Column(Boolean, default=False)
     force_ctas_schema = Column(String(250))
@@ -654,7 +655,7 @@ class Database(Model, AuditMixinNullable, ImportMixin):
     impersonate_user = Column(Boolean, default=False)
     export_fields = ('database_name', 'sqlalchemy_uri', 'cache_timeout',
                      'expose_in_sqllab', 'allow_run_sync', 'allow_run_async',
-                     'allow_ctas', 'allow_csv_upload', 'extra')
+                     'allow_ctas', 'allow_csv_upload', 'allow_excel_upload', 'extra')
     export_children = ['tables']
 
     def __repr__(self):
@@ -934,6 +935,9 @@ class Database(Model, AuditMixinNullable, ImportMixin):
 
     def get_schema_access_for_csv_upload(self):
         return self.get_extra().get('schemas_allowed_for_csv_upload', [])
+
+    def get_schema_access_for_excel_upload(self):
+        return self.get_extra().get('schemas_allowed_for_excel_upload', [])
 
     @property
     def sqlalchemy_uri_decrypted(self):

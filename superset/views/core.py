@@ -39,7 +39,7 @@ from superset import (
 from superset.connectors.connector_registry import ConnectorRegistry
 from superset.connectors.sqla.models import AnnotationDatasource, SqlaTable
 from superset.exceptions import SupersetException
-from superset.forms import CsvToDatabaseForm
+from superset.forms import CsvToDatabaseForm, ExcelToDatabaseForm
 from superset.jinja_context import get_template_processor
 from superset.legacy import cast_form_data, update_time_range
 import superset.models.core as models
@@ -62,7 +62,6 @@ config = app.config
 stats_logger = config.get('STATS_LOGGER')
 log_this = models.Log.log_this
 DAR = models.DatasourceAccessRequest
-
 
 ALL_DATASOURCE_ACCESS_ERR = __(
     'This endpoint requires the `all_datasource_access` permission')
@@ -104,7 +103,6 @@ class SliceFilter(SupersetFilter):
 
 
 class DashboardFilter(SupersetFilter):
-
     """List dashboards for which users have access to at least one slice or are owners"""
 
     def apply(self, query, func):  # noqa
@@ -117,21 +115,21 @@ class DashboardFilter(SupersetFilter):
         datasource_perms = self.get_view_menus('datasource_access')
         slice_ids_qry = (
             db.session
-            .query(Slice.id)
-            .filter(Slice.perm.in_(datasource_perms))
+                .query(Slice.id)
+                .filter(Slice.perm.in_(datasource_perms))
         )
         owner_ids_qry = (
             db.session
-            .query(Dash.id)
-            .join(Dash.owners)
-            .filter(User.id == User.get_user_id())
+                .query(Dash.id)
+                .join(Dash.owners)
+                .filter(User.id == User.get_user_id())
         )
         query = query.filter(
             or_(Dash.id.in_(
                 db.session.query(Dash.id)
-                .distinct()
-                .join(Dash.slices)
-                .filter(Slice.id.in_(slice_ids_qry)),
+                    .distinct()
+                    .join(Dash.slices)
+                    .filter(Slice.id.in_(slice_ids_qry)),
             ), Dash.id.in_(owner_ids_qry)),
         )
         return query
@@ -147,14 +145,14 @@ class DatabaseView(SupersetModelView, DeleteMixin, YamlExportMixin):  # noqa
 
     list_columns = [
         'database_name', 'backend', 'allow_run_sync', 'allow_run_async',
-        'allow_dml', 'allow_csv_upload', 'creator', 'modified']
+        'allow_dml', 'allow_csv_upload', 'allow_excel_upload', 'creator', 'modified']
     order_columns = [
         'database_name', 'allow_run_sync', 'allow_run_async', 'allow_dml',
-        'modified', 'allow_csv_upload',
+        'modified', 'allow_csv_upload', 'allow_excel_upload',
     ]
     add_columns = [
         'database_name', 'sqlalchemy_uri', 'cache_timeout', 'expose_in_sqllab',
-        'allow_run_sync', 'allow_run_async', 'allow_csv_upload',
+        'allow_run_sync', 'allow_run_async', 'allow_csv_upload', 'allow_excel_upload',
         'allow_ctas', 'allow_dml', 'force_ctas_schema', 'impersonate_user',
         'allow_multi_schema_metadata_fetch', 'extra',
     ]
@@ -213,6 +211,9 @@ class DatabaseView(SupersetModelView, DeleteMixin, YamlExportMixin):  # noqa
             '2. The ``schemas_allowed_for_csv_upload`` is a comma separated list '
             'of schemas that CSVs are allowed to upload to. '
             'Specify it as **"schemas_allowed": ["public", "csv_upload"]**. '
+            '3. The ``schemas_allowed_for_excel_upload`` is a comma separated list '
+            'of schemas that Excels are allowed to upload to. '
+            'Specify it as **"schemas_allowed": ["public", "excel_upload"]**. '
             'If database flavor does not support schema or any schema is allowed '
             'to be accessed, just leave the list empty', True),
         'impersonate_user': _(
@@ -231,6 +232,8 @@ class DatabaseView(SupersetModelView, DeleteMixin, YamlExportMixin):  # noqa
             'Note this defaults to the global timeout if undefined.'),
         'allow_csv_upload': _(
             'If selected, please set the schemas allowed for csv upload in Extra.'),
+        'allow_excel_upload': _(
+            'If selected, please set the schemas allowed for excel upload in Extra.'),
     }
     label_columns = {
         'expose_in_sqllab': _('Expose in SQL Lab'),
@@ -247,6 +250,7 @@ class DatabaseView(SupersetModelView, DeleteMixin, YamlExportMixin):  # noqa
         'allow_run_async': _('Allow Run Async'),
         'impersonate_user': _('Impersonate the logged on user'),
         'allow_csv_upload': _('Allow Csv Upload'),
+        'allow_excel_upload': _('Allow Excel Upload'),
         'modified': _('Modified'),
         'allow_multi_schema_metadata_fetch': _('Allow Multi Schema Metadata Fetch'),
         'backend': _('Backend'),
@@ -282,7 +286,6 @@ appbuilder.add_link(
     category_label=__('Manage'),
     category_icon='fa-wrench')
 
-
 appbuilder.add_view(
     DatabaseView,
     'Databases',
@@ -299,7 +302,7 @@ class DatabaseAsync(DatabaseView):
         'expose_in_sqllab', 'allow_ctas', 'force_ctas_schema',
         'allow_run_async', 'allow_run_sync', 'allow_dml',
         'allow_multi_schema_metadata_fetch', 'allow_csv_upload',
-        'allows_subquery',
+        'allow_excel_upload', 'allows_subquery',
     ]
 
 
@@ -376,7 +379,78 @@ class CsvToDatabaseView(SimpleFormView):
                 security_manager.all_datasource_access())
 
 
+class ExcelToDatabaseView(CsvToDatabaseView):
+    form = ExcelToDatabaseForm
+    form_template = 'superset/form_view/excel_to_database_view/edit.html'
+    form_title = _('Excel to Database configuration')
+    add_columns = ['database', 'schema', 'table_name']
+
+    def form_get(self, form):
+        form.sep.data = ','
+        form.header.data = 0
+        form.mangle_dupe_cols.data = True
+        form.skipinitialspace.data = False
+        form.skip_blank_lines.data = True
+        form.infer_datetime_format.data = True
+        form.decimal.data = '.'
+        form.if_exists.data = 'fail'
+
+    def form_post(self, form):
+        database = form.con.data
+        schema_name = form.schema.data or ''
+
+        if not self.is_schema_allowed(database, schema_name):
+            message = _('Database "{0}" Schema "{1}" is not allowed for excel uploads. '
+                        'Please contact Superset Admin'.format(database.database_name,
+                                                               schema_name))
+            flash(message, 'danger')
+            return redirect('/exceltodatabaseview/form')
+
+        excel_file = form.excel_file.data
+        form.excel_file.data.filename = secure_filename(form.excel_file.data.filename)
+        excel_filename = form.excel_file.data.filename
+        path = os.path.join(config['UPLOAD_FOLDER'], excel_filename)
+        try:
+            utils.ensure_path_exists(config['UPLOAD_FOLDER'])
+            excel_file.save(path)
+            table = SqlaTable(table_name=form.name.data)
+            table.database = form.data.get('con')
+            table.database_id = table.database.id
+            table.database.db_engine_spec.create_table_from_excel(form, table)
+        except Exception as e:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            message = 'Table name {} already exists. Please pick another'.format(
+                form.name.data) if isinstance(e, IntegrityError) else text_type(e)
+            flash(
+                message,
+                'danger')
+            return redirect('/exceltodatabaseview/form')
+
+        os.remove(path)
+        # Go back to welcome page / splash screen
+        db_name = table.database.database_name
+        message = _('Excel file "{0}" uploaded to table "{1}" in '
+                    'database "{2}"'.format(excel_filename,
+                                            form.name.data,
+                                            db_name))
+        flash(message, 'info')
+        return redirect('/tablemodelview/list/')
+
+    def is_schema_allowed(self, database, schema):
+        if not database.allow_excel_upload:
+            return False
+        schemas = database.get_schema_access_for_excel_upload()
+        if schemas:
+            return schema in schemas
+        return (security_manager.database_access(database) or
+                security_manager.all_datasource_access())
+
+
 appbuilder.add_view_no_menu(CsvToDatabaseView)
+appbuilder.add_view_no_menu(ExcelToDatabaseView)
 
 
 class DatabaseTablesAsync(DatabaseView):
@@ -384,7 +458,6 @@ class DatabaseTablesAsync(DatabaseView):
 
 
 appbuilder.add_view_no_menu(DatabaseTablesAsync)
-
 
 if config.get('ENABLE_ACCESS_REQUEST'):
     class AccessRequestsModelView(SupersetModelView, DeleteMixin):
@@ -402,6 +475,7 @@ if config.get('ENABLE_ACCESS_REQUEST'):
             'roles_with_datasource': _('Roles to grant'),
             'created_on': _('Created On'),
         }
+
 
     appbuilder.add_view(
         AccessRequestsModelView,
@@ -703,7 +777,6 @@ def ping():
 
 
 class KV(BaseSupersetView):
-
     """Used for storing and retrieving key value pairs"""
 
     @log_this
@@ -735,7 +808,6 @@ appbuilder.add_view_no_menu(KV)
 
 
 class R(BaseSupersetView):
-
     """used for short urls"""
 
     @log_this
@@ -772,6 +844,7 @@ appbuilder.add_view_no_menu(R)
 
 class Superset(BaseSupersetView):
     """The base views for Superset!"""
+
     @has_access_api
     @expose('/datasources/')
     def datasources(self):
@@ -842,8 +915,8 @@ class Superset(BaseSupersetView):
         if dashboard_id:
             dash = (
                 db.session.query(models.Dashboard)
-                .filter_by(id=int(dashboard_id))
-                .one()
+                    .filter_by(id=int(dashboard_id))
+                    .one()
             )
             datasources |= dash.datasources
         datasource_id = request.args.get('datasource_id')
@@ -852,8 +925,8 @@ class Superset(BaseSupersetView):
             ds_class = ConnectorRegistry.sources.get(datasource_type)
             datasource = (
                 db.session.query(ds_class)
-                .filter_by(id=int(datasource_id))
-                .one()
+                    .filter_by(id=int(datasource_id))
+                    .one()
             )
             datasources.add(datasource)
 
@@ -891,10 +964,11 @@ class Superset(BaseSupersetView):
                     r.datasource_type, r.datasource_id, session)
                 user = security_manager.get_user_by_id(r.created_by_fk)
                 if not datasource or \
-                   security_manager.datasource_access(datasource, user):
+                        security_manager.datasource_access(datasource, user):
                     # datasource does not exist anymore
                     session.delete(r)
             session.commit()
+
         datasource_type = request.args.get('datasource_type')
         datasource_id = request.args.get('datasource_id')
         created_by_username = request.args.get('created_by')
@@ -916,11 +990,11 @@ class Superset(BaseSupersetView):
 
         requests = (
             session.query(DAR)
-            .filter(
+                .filter(
                 DAR.datasource_id == datasource_id,
                 DAR.datasource_type == datasource_type,
                 DAR.created_by_fk == requested_by.id)
-            .all()
+                .all()
         )
 
         if not requests:
@@ -1030,8 +1104,8 @@ class Superset(BaseSupersetView):
         if slice_id:
             slc = (
                 db.session.query(models.Slice)
-                .filter_by(id=slice_id)
-                .one()
+                    .filter_by(id=slice_id)
+                    .one()
             )
             return slc.get_viz()
         else:
@@ -1141,8 +1215,8 @@ class Superset(BaseSupersetView):
 
         status = 200
         if (
-            payload.get('status') == QueryStatus.FAILED or
-            payload.get('error') is not None
+                payload.get('status') == QueryStatus.FAILED or
+                payload.get('error') is not None
         ):
             status = 400
 
@@ -1290,7 +1364,7 @@ class Superset(BaseSupersetView):
             return redirect(error_redirect)
 
         if config.get('ENABLE_ACCESS_REQUEST') and (
-            not security_manager.datasource_access(datasource)
+                not security_manager.datasource_access(datasource)
         ):
             flash(
                 __(security_manager.get_datasource_access_error_msg(datasource)),
@@ -1432,8 +1506,8 @@ class Superset(BaseSupersetView):
         if request.args.get('add_to_dash') == 'existing':
             dash = (
                 db.session.query(models.Dashboard)
-                .filter_by(id=int(request.args.get('save_to_dashboard_id')))
-                .one()
+                    .filter_by(id=int(request.args.get('save_to_dashboard_id')))
+                    .one()
             )
 
             # check edit dashboard permissions
@@ -1525,9 +1599,9 @@ class Superset(BaseSupersetView):
         db_id = int(db_id)
         database = (
             db.session
-            .query(models.Database)
-            .filter_by(id=db_id)
-            .one()
+                .query(models.Database)
+                .filter_by(id=db_id)
+                .one()
         )
         schemas = database.all_schema_names()
         schemas = security_manager.schemas_accessible_by_user(database, schemas)
@@ -1581,8 +1655,8 @@ class Superset(BaseSupersetView):
         dash = models.Dashboard()
         original_dash = (
             session
-            .query(models.Dashboard)
-            .filter_by(id=dashboard_id).first())
+                .query(models.Dashboard)
+                .filter_by(id=dashboard_id).first())
 
         dash.owners = [g.user] if g.user else []
         dash.dashboard_title = data['dashboard_title']
@@ -1604,8 +1678,8 @@ class Superset(BaseSupersetView):
             # while in older version slice_id is string type
             for value in data['positions'].values():
                 if (
-                    isinstance(value, dict) and value.get('meta') and
-                    value.get('meta').get('chartId')
+                        isinstance(value, dict) and value.get('meta') and
+                        value.get('meta').get('chartId')
                 ):
                     old_id = '{}'.format(value.get('meta').get('chartId'))
                     new_id = int(old_to_new_sliceids[old_id])
@@ -1647,8 +1721,8 @@ class Superset(BaseSupersetView):
         slice_id_to_name = {}
         for value in positions.values():
             if (
-                isinstance(value, dict) and value.get('meta') and
-                value.get('meta').get('chartId')
+                    isinstance(value, dict) and value.get('meta') and
+                    value.get('meta').get('chartId')
             ):
                 slice_id = value.get('meta').get('chartId')
                 slice_ids.append(slice_id)
@@ -1723,9 +1797,9 @@ class Superset(BaseSupersetView):
             if db_name:
                 database = (
                     db.session
-                    .query(models.Database)
-                    .filter_by(database_name=db_name)
-                    .first()
+                        .query(models.Database)
+                        .filter_by(database_name=db_name)
+                        .first()
                 )
                 if database and uri == database.safe_sqlalchemy_uri():
                     # the password-masked uri was passed
@@ -1751,8 +1825,8 @@ class Superset(BaseSupersetView):
 
             engine_params = (
                 request.json
-                .get('extras', {})
-                .get('engine_params', {}))
+                    .get('extras', {})
+                    .get('engine_params', {}))
             connect_args = engine_params.get('connect_args')
 
             if configuration:
@@ -1764,8 +1838,8 @@ class Superset(BaseSupersetView):
         except Exception as e:
             logging.exception(e)
             return json_error_response((
-                'Connection failed!\n\n'
-                'The error message returned was:\n{}').format(e))
+                                           'Connection failed!\n\n'
+                                           'The error message returned was:\n{}').format(e))
 
     @api
     @has_access_api
@@ -1781,22 +1855,22 @@ class Superset(BaseSupersetView):
 
         qry = (
             db.session.query(M.Log, M.Dashboard, M.Slice)
-            .outerjoin(
+                .outerjoin(
                 M.Dashboard,
                 M.Dashboard.id == M.Log.dashboard_id,
             )
-            .outerjoin(
+                .outerjoin(
                 M.Slice,
                 M.Slice.id == M.Log.slice_id,
             )
-            .filter(
+                .filter(
                 sqla.and_(
                     ~M.Log.action.in_(('queries', 'shortner', 'sql_json')),
                     M.Log.user_id == user_id,
                 ),
             )
-            .order_by(M.Log.dttm.desc())
-            .limit(limit)
+                .order_by(M.Log.dttm.desc())
+                .limit(limit)
         )
         payload = []
         for log in qry.all():
@@ -1844,7 +1918,7 @@ class Superset(BaseSupersetView):
                 models.Dashboard,
                 models.FavStar.dttm,
             )
-            .join(
+                .join(
                 models.FavStar,
                 sqla.and_(
                     models.FavStar.user_id == int(user_id),
@@ -1852,7 +1926,7 @@ class Superset(BaseSupersetView):
                     models.Dashboard.id == models.FavStar.obj_id,
                 ),
             )
-            .order_by(
+                .order_by(
                 models.FavStar.dttm.desc(),
             )
         )
@@ -1883,13 +1957,13 @@ class Superset(BaseSupersetView):
             db.session.query(
                 Dash,
             )
-            .filter(
+                .filter(
                 sqla.or_(
                     Dash.created_by_fk == user_id,
                     Dash.changed_by_fk == user_id,
                 ),
             )
-            .order_by(
+                .order_by(
                 Dash.changed_on.desc(),
             )
         )
@@ -1912,7 +1986,7 @@ class Superset(BaseSupersetView):
         if not user_id:
             user_id = g.user.id
         Slice = models.Slice  # noqa
-        FavStar = models.FavStar # noqa
+        FavStar = models.FavStar  # noqa
         qry = (
             db.session.query(Slice,
                              FavStar.dttm).join(
@@ -1929,7 +2003,7 @@ class Superset(BaseSupersetView):
                     FavStar.user_id == user_id,
                 ),
             )
-            .order_by(Slice.slice_name.asc())
+                .order_by(Slice.slice_name.asc())
         )
         payload = [{
             'id': o.Slice.id,
@@ -1953,13 +2027,13 @@ class Superset(BaseSupersetView):
         Slice = models.Slice  # noqa
         qry = (
             db.session.query(Slice)
-            .filter(
+                .filter(
                 sqla.or_(
                     Slice.created_by_fk == user_id,
                     Slice.changed_by_fk == user_id,
                 ),
             )
-            .order_by(Slice.changed_on.desc())
+                .order_by(Slice.changed_on.desc())
         )
         payload = [{
             'id': o.id,
@@ -1984,7 +2058,7 @@ class Superset(BaseSupersetView):
                 models.Slice,
                 models.FavStar.dttm,
             )
-            .join(
+                .join(
                 models.FavStar,
                 sqla.and_(
                     models.FavStar.user_id == int(user_id),
@@ -1992,7 +2066,7 @@ class Superset(BaseSupersetView):
                     models.Slice.id == models.FavStar.obj_id,
                 ),
             )
-            .order_by(
+                .order_by(
                 models.FavStar.dttm.desc(),
             )
         )
@@ -2041,8 +2115,8 @@ class Superset(BaseSupersetView):
             SqlaTable = ConnectorRegistry.sources['table']
             table = (
                 session.query(SqlaTable)
-                .join(models.Database)
-                .filter(
+                    .join(models.Database)
+                    .filter(
                     models.Database.database_name == db_name or
                     SqlaTable.table_name == table_name)
             ).first()
@@ -2121,7 +2195,7 @@ class Superset(BaseSupersetView):
                         'dashboard_id={dash.id}&'.format(**locals()))
 
         dash_edit_perm = check_ownership(dash, raise_if_false=False) and \
-            security_manager.can_access('can_save_dash', 'Superset')
+                         security_manager.can_access('can_save_dash', 'Superset')
         dash_save_perm = security_manager.can_access('can_save_dash', 'Superset')
         superset_can_explore = security_manager.can_access('can_explore', 'Superset')
         slice_can_edit = security_manager.can_access('can_edit', 'SliceModelView')
@@ -2133,6 +2207,7 @@ class Superset(BaseSupersetView):
         @log_this
         def dashboard(**kwargs):  # noqa
             pass
+
         dashboard(
             dashboard_id=dash.id,
             dashboard_version='v2',
@@ -2234,8 +2309,8 @@ class Superset(BaseSupersetView):
         table_name = data.get('datasourceName')
         table = (
             db.session.query(SqlaTable)
-            .filter_by(table_name=table_name)
-            .first()
+                .filter_by(table_name=table_name)
+                .first()
         )
         if not table:
             table = SqlaTable(table_name=table_name)
@@ -2423,7 +2498,7 @@ class Superset(BaseSupersetView):
         try:
             query = (
                 db.session.query(Query)
-                .filter_by(client_id=client_id).one()
+                    .filter_by(client_id=client_id).one()
             )
             query.status = utils.QueryStatus.STOPPED
             db.session.commit()
@@ -2564,8 +2639,8 @@ class Superset(BaseSupersetView):
         logging.info('Exporting CSV file [{}]'.format(client_id))
         query = (
             db.session.query(Query)
-            .filter_by(client_id=client_id)
-            .one()
+                .filter_by(client_id=client_id)
+                .one()
         )
 
         rejected_tables = security_manager.rejected_datasources(
@@ -2635,11 +2710,11 @@ class Superset(BaseSupersetView):
 
         sql_queries = (
             db.session.query(Query)
-            .filter(
+                .filter(
                 Query.user_id == g.user.get_id(),
                 Query.changed_on >= last_updated_dt,
             )
-            .all()
+                .all()
         )
         dict_queries = {q.client_id: q.to_dict() for q in sql_queries}
 
@@ -2653,10 +2728,10 @@ class Superset(BaseSupersetView):
         queries_to_timeout = [
             client_id for client_id, query_dict in dict_queries.items()
             if (
-                query_dict['state'] in unfinished_states and (
+                    query_dict['state'] in unfinished_states and (
                     now - query_dict['startDttm'] >
                     config.get('SQLLAB_ASYNC_TIME_LIMIT_SEC') * 1000
-                )
+            )
             )
         ]
 
@@ -2714,8 +2789,8 @@ class Superset(BaseSupersetView):
         query_limit = config.get('QUERY_SEARCH_LIMIT', 1000)
         sql_queries = (
             query.order_by(Query.start_time.asc())
-            .limit(query_limit)
-            .all()
+                .limit(query_limit)
+                .all()
         )
 
         dict_queries = [q.to_dict() for q in sql_queries]
@@ -2740,9 +2815,9 @@ class Superset(BaseSupersetView):
 
         welcome_dashboard_id = (
             db.session
-            .query(UserAttribute.welcome_dashboard_id)
-            .filter_by(user_id=g.user.get_id())
-            .scalar()
+                .query(UserAttribute.welcome_dashboard_id)
+                .filter_by(user_id=g.user.get_id())
+                .scalar()
         )
         if welcome_dashboard_id:
             return self.dashboard(str(welcome_dashboard_id))
@@ -2823,9 +2898,9 @@ class Superset(BaseSupersetView):
         db_id = int(request.args.get('db_id'))
         database = (
             db.session
-            .query(models.Database)
-            .filter_by(id=db_id)
-            .one()
+                .query(models.Database)
+                .filter_by(id=db_id)
+                .one()
         )
         try:
             schemas_allowed = database.get_schema_access_for_csv_upload()
@@ -2842,9 +2917,49 @@ class Superset(BaseSupersetView):
             return self.json_response(schemas_allowed_processed)
         except Exception:
             return json_error_response((
-                'Failed to fetch schemas allowed for csv upload in this database! '
-                'Please contact Superset Admin!\n\n'
-                'The error message returned was:\n{}').format(traceback.format_exc()))
+                                           'Failed to fetch schemas allowed for csv upload in this database! '
+                                           'Please contact Superset Admin!\n\n'
+                                           'The error message returned was:\n{}').format(traceback.format_exc()))
+
+
+    @api
+    @has_access_api
+    @expose('/schema_access_for_excel_upload')
+    def schemas_access_for_excel_upload(self):
+        """
+        This method exposes an API endpoint to
+        get the schema access control settings for excel upload in this database
+        """
+        if not request.args.get('db_id'):
+            return json_error_response(
+                'No database is allowed for your excel upload')
+
+        db_id = int(request.args.get('db_id'))
+        database = (
+            db.session
+                .query(models.Database)
+                .filter_by(id=db_id)
+                .one()
+        )
+        try:
+            schemas_allowed = database.get_schema_access_for_excel_upload()
+            if (security_manager.database_access(database) or
+                    security_manager.all_datasource_access()):
+                return self.json_response(schemas_allowed)
+            # the list schemas_allowed should not be empty here
+            # and the list schemas_allowed_processed returned from security_manager
+            # should not be empty either,
+            # otherwise the database should have been filtered out
+            # in ExcelToDatabaseForm
+            schemas_allowed_processed = security_manager.schemas_accessible_by_user(
+                database, schemas_allowed, False)
+            return self.json_response(schemas_allowed_processed)
+        except Exception:
+            return json_error_response((
+                                           'Failed to fetch schemas allowed for excel upload in this database! '
+                                           'Please contact Superset Admin!\n\n'
+                                           'The error message returned was:\n{}').format(traceback.format_exc()))
+
 
 
 appbuilder.add_view_no_menu(Superset)
@@ -2880,7 +2995,6 @@ appbuilder.add_view(
     category_label=__('Manage'),
     category_icon='')
 
-
 appbuilder.add_view_no_menu(CssTemplateAsyncModelView)
 
 appbuilder.add_link(
@@ -2907,6 +3021,15 @@ appbuilder.add_link(
     'Upload a CSV',
     label=__('Upload a CSV'),
     href='/csvtodatabaseview/form',
+    icon='fa-upload',
+    category='Sources',
+    category_label=__('Sources'),
+    category_icon='fa-wrench')
+
+appbuilder.add_link(
+    'Upload a Excel',
+    label=__('Upload a Excel'),
+    href='/exceltodatabaseview/form',
     icon='fa-upload',
     category='Sources',
     category_label=__('Sources'),
@@ -2941,6 +3064,5 @@ def panoramix(url):  # noqa
 @app.route('/<regex("caravel\/.*"):url>')
 def caravel(url):  # noqa
     return redirect(request.full_path.replace('caravel', 'superset'))
-
 
 # ---------------------------------------------------------------------

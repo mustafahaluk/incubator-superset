@@ -180,6 +180,13 @@ class BaseEngineSpec(object):
         return df
 
     @staticmethod
+    def excel_to_df(**kwargs):
+        kwargs['filepath_or_buffer'] = \
+            config['UPLOAD_FOLDER'] + kwargs['filepath_or_buffer']
+        df = pandas.read_excel(io=kwargs['filepath_or_buffer'])
+        return df
+
+    @staticmethod
     def df_to_db(df, table, **kwargs):
         df.to_sql(**kwargs)
         table.user_id = g.user.id
@@ -213,6 +220,46 @@ class BaseEngineSpec(object):
             'chunksize': 10000,
         }
         df = BaseEngineSpec.csv_to_df(**kwargs)
+
+        df_to_db_kwargs = {
+            'table': table,
+            'df': df,
+            'name': form.name.data,
+            'con': create_engine(form.con.data.sqlalchemy_uri_decrypted, echo=False),
+            'schema': form.schema.data,
+            'if_exists': form.if_exists.data,
+            'index': form.index.data,
+            'index_label': form.index_label.data,
+            'chunksize': 10000,
+        }
+        
+        BaseEngineSpec.df_to_db(**df_to_db_kwargs)
+
+    @staticmethod
+    def create_table_from_excel(form, table):
+        def _allowed_file(filename):
+            # Only allow specific file extensions as specified in the config
+            extension = os.path.splitext(filename)[1]
+            return extension and extension[1:] in config['ALLOWED_EXTENSIONS']
+
+        filename = secure_filename(form.excel_file.data.filename)
+        if not _allowed_file(filename):
+            raise Exception('Invalid file type selected')
+        kwargs = {
+            'filepath_or_buffer': filename,
+            'sep': form.sep.data,
+            'header': form.header.data if form.header.data else 0,
+            'index_col': form.index_col.data,
+            'mangle_dupe_cols': form.mangle_dupe_cols.data,
+            'skipinitialspace': form.skipinitialspace.data,
+            'skiprows': form.skiprows.data,
+            'nrows': form.nrows.data,
+            'skip_blank_lines': form.skip_blank_lines.data,
+            'parse_dates': form.parse_dates.data,
+            'infer_datetime_format': form.infer_datetime_format.data,
+            'chunksize': 10000,
+        }
+        df = BaseEngineSpec.excel_to_df(**kwargs)
 
         df_to_db_kwargs = {
             'table': table,
